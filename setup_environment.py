@@ -2,6 +2,9 @@ import subprocess
 import sys
 import os
 
+# Download and install prebuilt sentencepiece wheel for Python 3.13 on Windows
+import urllib.request
+
 
 def _is_gpu_available():
     try:
@@ -76,25 +79,29 @@ def create_and_activate_venv(venv_name=".venv") -> None:
             check=True,
         )
 
-    # Download and install prebuilt sentencepiece wheel for Python 3.13 on Windows
-    import urllib.request
+    
 
-    wheel_dir = os.path.join(os.getcwd(), "wheel", "tmp")
-    os.makedirs(wheel_dir, exist_ok=True)
-    wheel_filename = "sentencepiece-0.2.1-cp313-cp313-win_amd64.whl"
-    wheel_path = os.path.join(wheel_dir, wheel_filename)
-    wheel_url = (
-        "https://github.com/NeoAnthropocene/wheels/raw/f76a39a2c1158b9c8ffcfdc7c0f914f5d2835256/"
-        + "sentencepiece-0.2.1-cp313-cp313-win_amd64.whl"
-    )
+    if os.name == "nt": 
+        wheel_dir = os.path.join(os.getcwd(), "wheel", "tmp")
+        os.makedirs(wheel_dir, exist_ok=True)
+        wheel_filename = "sentencepiece-0.2.1-cp313-cp313-win_amd64.whl"
+        wheel_path = os.path.join(wheel_dir, wheel_filename)
+        wheel_url = (
+            "https://github.com/NeoAnthropocene/wheels/raw/f76a39a2c1158b9c8ffcfdc7c0f914f5d2835256/"
+            + "sentencepiece-0.2.1-cp313-cp313-win_amd64.whl"
+        )
 
-    if os.path.exists(wheel_path):
-        print(f"Using existing wheel: {wheel_path}")
+        if os.path.exists(wheel_path):
+            print(f"Using existing wheel: {wheel_path}")
+        else:
+            print(f"Downloading sentencepiece wheel from {wheel_url} ...")
+            tmp_path, _ = urllib.request.urlretrieve(wheel_url)
+            os.rename(tmp_path, wheel_path)
+        subprocess.run([python_executable, "-m", "pip", "install", wheel_path], check=True)
     else:
-        print(f"Downloading sentencepiece wheel from {wheel_url} ...")
-        tmp_path, _ = urllib.request.urlretrieve(wheel_url)
-        os.rename(tmp_path, wheel_path)
-    subprocess.run([python_executable, "-m", "pip", "install", wheel_path], check=True)
+        subprocess.run(
+            [python_executable, "-m", "pip", "install", "sentencepiece"], check=True
+        )
 
 
 if __name__ == "__main__":
