@@ -102,6 +102,8 @@ class AbstractT5Model(nn.Module):
             labels = batch[2]
             token_type_ids = batch[3]
             source_input_ids = source_input_ids.to(self._device)
+            negative_labels = batch[4]
+            negative_labels = negative_labels.to(self._device)
             labels = labels.to(self._device)
 
             loss, _, predicted_token_ids = self.forward(
@@ -111,6 +113,7 @@ class AbstractT5Model(nn.Module):
                 labels=labels,
                 use_teacher_forcing=not is_test,
                 training_config=training_config,
+                negative_labels=negative_labels,
             )
 
             # Accumulate the scaled loss

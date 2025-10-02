@@ -20,7 +20,7 @@ from src.utils.learning_rate import compute_lr_factor
 
 from torch.optim.lr_scheduler import LambdaLR
 
-from src.utils.model_utils import set_mode
+from src.utils.model_utils import print_model_parameters, set_mode
 
 
 def _losses_file_path(model_folder_path: str) -> str:

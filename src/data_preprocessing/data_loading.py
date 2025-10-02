@@ -7,7 +7,8 @@ import torch
 
 from torch.utils.data import DataLoader
 
-from src.data_preprocessing.label_handling import format_labels
+from src.data_preprocessing.label_handling import extract_tree_labels, format_labels
+from src.data_preprocessing.tokenizer import HierarchicalLabelTokenizerFast
 from src.utils.constants import (
     DEBUG,
     INPUT_FOLDER_NAME,
@@ -287,6 +288,14 @@ def collate_fn(
             for x in batch_tok_ids
         ]
     )
+    negative_labels = torch.tensor(
+        [
+            [[pad_token_id] * 10]
+            + x["negative_labels"]
+            + [[pad_token_id] * 10] * (max_label_length - 1 - len(x["negative_labels"]))
+            for x in batch_tok_ids
+        ]
+    )
     token_type_ids = torch.tensor(
         [
             (
@@ -302,12 +311,12 @@ def collate_fn(
     # Create an attention mask for the input IDs
     attention_mask = (input_ids != pad_token_id).float()
 
-    return input_ids, attention_mask, labels, token_type_ids
+    return input_ids, attention_mask, labels, token_type_ids, negative_labels
 
 
 def load_data(
     input_tokenizer,
-    output_tokenizer,
+    output_tokenizer: HierarchicalLabelTokenizerFast,
     max_output_length: int,
     experiment_data_folder: str,
     output_file_name: str,
@@ -380,18 +389,46 @@ def load_data(
                 truncation=True,
                 add_special_tokens=True,
             )
-            # Tokenize output labels
-            label_encodings = output_tokenizer(
-                batch["label"],
-                max_length=max_output_length,
-                padding=False,
-                truncation=True,
-                add_special_tokens=True,
-            )
+            # Add a "negative_labels" field in the batch if it does not exist
+            if "negative_labels" not in batch:
+                batch["negative_labels"] = [[] for _ in range(len(batch["label"]))]
+            # Get all the labels from the output tokenizer
+            label_map = output_tokenizer.get_vocab()
+            # For each label in the batch, get 10 random negative samples from the labels efficiently
+            for i in range(len(batch["label"])):
+                if len(batch["negative_labels"][i]) == 0:
+                    positive_label_list = batch["label"][i].split(" ") + ["</s>"]
+                    for positive_label in positive_label_list:
+                        candidate_negative_ids = [
+                            idx
+                            for token, idx in label_map.items()
+                            if token != positive_label
+                        ]
+                        if len(candidate_negative_ids) < 10:
+                            negative_samples = candidate_negative_ids
+                        else:
+                            indices = torch.randperm(len(candidate_negative_ids))[:10]
+                            negative_samples = [
+                                candidate_negative_ids[idx] for idx in indices
+                            ]
+                        batch["negative_labels"][i].append(negative_samples)
+            if model_name == ModelName.STRUCTURED_GENERATIVE_T5 and False:
+                # TODO Translate all the codes into the related identifiers
+                pass
+            else:
+                # Tokenize output labels
+                label_encodings = output_tokenizer(
+                    batch["label"],
+                    max_length=max_output_length,
+                    padding=False,
+                    truncation=True,
+                    add_special_tokens=True,
+                )
             token_type_ids = input_encodings.get("token_type_ids", None)
             returned_map = {
                 "input_ids": input_encodings["input_ids"],
                 "labels": label_encodings["input_ids"],
+                "negative_labels": batch["negative_labels"],
             }
             if token_type_ids is not None:
                 returned_map["token_type_ids"] = token_type_ids

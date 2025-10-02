@@ -30,6 +30,7 @@ def run_experiments(
 ):
     # For each experiment name
     for experiment_name in experiment_names:
+        # TODO this should account for ShT5 used with latent representations
         if (
             cumulative and model_name != ModelName.STRUCTURED_GENERATIVE_T5
         ) or per_level_chars > 1:

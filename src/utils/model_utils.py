@@ -32,6 +32,7 @@ def set_mode(
         )
         if do_train and is_parameter_to_train:
             requires_grad = True
+            print(f"Parameter '{name}' requires_grad set to {param.requires_grad}")
         else:
             requires_grad = False
         param.requires_grad = requires_grad
@@ -48,16 +49,16 @@ def print_model_parameters(model):
         else:
             return str(value)
 
-    # print("====================================")
+    print("====================================")
     total_params = 0
     for name, param in model.named_parameters():
         current_layer_params = param.numel()
         total_params += current_layer_params
         if param.requires_grad:
-            # print(f"{name}: {format_large_number(current_layer_params)} (trainable)")
+            print(f"{name}: {format_large_number(current_layer_params)} (trainable)")
             pass
         else:
-            # print(f"{name}: {format_large_number(current_layer_params)} (frozen)")
+            print(f"{name}: {format_large_number(current_layer_params)} (frozen)")
             pass
-    # print(f"Total parameters: {format_large_number(total_params)}")
-    # print("====================================")
+    print(f"Total parameters: {format_large_number(total_params)}")
+    print("====================================")

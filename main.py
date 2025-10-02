@@ -57,7 +57,17 @@ if __name__ == "__main__":
         project_name = (
             f"{experiment_name}__{model_name.value}_{hf_model_name_cleaned}{suffix}"
         )
-        tracked_function(
+        run_experiments(
+            tmp_experiment_names,
+            base_data_folder,
+            model_name,
+            hf_model_name,
+            per_level_chars,
+            args,
+            cumulative,
+            decoder_type,
+        )
+        """tracked_function(
             _command=run_experiments,
             _output_dir=str(emissions_path),
             _interval=10,
@@ -72,4 +82,4 @@ if __name__ == "__main__":
                 cumulative,
                 decoder_type,
             ),
-        )
+        )"""

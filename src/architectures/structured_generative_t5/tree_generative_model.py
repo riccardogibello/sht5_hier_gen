@@ -1,5 +1,6 @@
 from typing import Optional
 
+from info_nce import InfoNCE
 import torch
 import torch.nn as nn
 
@@ -36,6 +37,7 @@ class TreeGenerativeModel(AbstractT5Model):
         local_folder_path: str,
         config: StructuredGenerativeT5Config,
         label_weights: torch.Tensor,
+        label_id_descriptions: dict[int, str],
     ):
         super().__init__(
             local_folder_path=local_folder_path,
@@ -63,6 +65,8 @@ class TreeGenerativeModel(AbstractT5Model):
         elif config.decoder_type == DecoderType.TRANSFORMER.value:
             self.decoder = TransformerCharDecoder(
                 config=config,
+                get_label_embeddings=lambda x: self.encoder(**x),
+                label_id_descriptions=label_id_descriptions,
             )
         else:
             raise ValueError(
@@ -83,6 +87,7 @@ class TreeGenerativeModel(AbstractT5Model):
         token_type_ids: torch.LongTensor,
         attention_mask: torch.LongTensor,
         labels: Optional[torch.LongTensor] = None,
+        negative_labels: Optional[torch.LongTensor] = None,
         use_teacher_forcing: bool = True,
         max_generation_length: Optional[int] = None,
         training_config: Optional["TrainingConfig"] = None,
@@ -99,7 +104,10 @@ class TreeGenerativeModel(AbstractT5Model):
             loss (optional): Cross-entropy + length penalty loss if labels are provided.
             probabilities: Softmax probabilities over vocab for each token position.
             predicted_token_ids: Tokens predicted by the decoder.
+            negative_labels (optional): A Tensor of shape (batch_size, sequence_length, num_negative_samples) containing
+                the identifiers of the negative samples for each position in the sequence.
         """
+        # TODO modify the calling method to pass also the tensor containing the negative samples
         assert (
             not use_teacher_forcing or labels is not None
         ), "Teacher forcing enabled but no labels provided."
@@ -143,12 +151,32 @@ class TreeGenerativeModel(AbstractT5Model):
         loss = None
         if labels is not None:
             labels = labels[:, 1:]
+            # Pass the positive labels to the embedding layer of the decoder, to obtain a tensor of shape
+            # (batch_size, sequence_length, embedding_dim)
+            positive_labels_embeddings = self.decoder.embedding(labels)
+            negative_labels = negative_labels[:, 1:, :]
+            # Pass the negative labels to the embedding layer of the decoder, to obtain a tensor of shape
+            # (batch_size, sequence_length, num_negative_samples, embedding_dim)
+            negative_labels_embeddings = self.decoder.embedding(negative_labels)
             # If the second dimension of the logits has one value less than the labels, remove the first element
             # of the labels to match the logits size.
             if logits.size(1) == labels.size(1) + 1:
                 logits = logits[:, :-1]
 
             try:
+                # TODO update the InfoNCE loss
+                loss = InfoNCE(negative_mode="paired")
+                info_nce_loss = loss(
+                    logits.reshape(-1, logits.size(2)),
+                    positive_labels_embeddings.reshape(
+                        -1, positive_labels_embeddings.size(2)
+                    ),
+                    negative_labels_embeddings.reshape(
+                        -1,
+                        negative_labels_embeddings.size(2),
+                        negative_labels_embeddings.size(3),
+                    ),
+                )
                 # CrossEntropy loss with optional label smoothing
                 ce_loss = nn.CrossEntropyLoss(
                     ignore_index=self.config.decoder_pad_token_id,
@@ -157,7 +185,7 @@ class TreeGenerativeModel(AbstractT5Model):
                     #     training_config.label_smoothing if training_config else 0.0
                     # ),
                 )(
-                    logits.contiguous().view(-1, self.config.decoder_vocab_size),
+                    logits.contiguous().view(-1, logits.size(-1)),
                     labels.contiguous().view(-1),
                 )
             except ValueError as e:
@@ -194,9 +222,11 @@ class TreeGenerativeModel(AbstractT5Model):
 
                 l1_length_penalty = torch.abs(true_lengths - pred_lengths).mean()
                 loss = (
-                    ce_loss + training_config.length_penalty_weight * l1_length_penalty
+                    ce_loss
+                    + info_nce_loss
+                    + training_config.length_penalty_weight * l1_length_penalty
                 )
             else:
-                loss = ce_loss
+                loss = ce_loss + info_nce_loss
 
         return loss, logits, predicted_token_ids

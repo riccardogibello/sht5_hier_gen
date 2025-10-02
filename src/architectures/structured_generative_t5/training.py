@@ -1,6 +1,7 @@
 import argparse
 import os
 import re
+import sys
 
 from transformers import AutoTokenizer
 
@@ -71,19 +72,21 @@ def train_model(
     )
 
     max_level = MAX_LEVEL
+    original_tokenizer = AutoTokenizer.from_pretrained(
+        hf_model_name,
+    )
     sg_tokenizer = HierarchicalLabelTokenizerFast(
         labels_csv_file_path=labels_file_path,
         max_level=max_level,
         tokenizer_dir=tokenizer_folder_path,
         per_level_chars=per_level_chars,
+        cumulative=cumulative,
+        label_descriptions_tokenizer=original_tokenizer,
     )
     sg_tokenizer.save_pretrained(
         tokenizer_folder_path,
     )
 
-    original_tokenizer = AutoTokenizer.from_pretrained(
-        hf_model_name,
-    )
     if original_tokenizer.model_max_length > 512:
         original_tokenizer.model_max_length = 512
 
@@ -245,6 +248,7 @@ def train_model(
         config=config,
         local_folder_path=model_folder_path,
         label_weights=label_weights,
+        label_id_descriptions=sg_tokenizer.label_id_descriptions,
     )
     train(
         model=model,
