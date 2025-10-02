@@ -52,6 +52,7 @@ class TransformerCharDecoder(nn.Module):
         # === Embeddings ===
         self.output_projection = None
         self.final_layer_norm = None
+        self.embedding = None
         if self.get_label_embeddings is None:
             # Standard embedding layer
             self.embedding = nn.Embedding(
@@ -66,8 +67,6 @@ class TransformerCharDecoder(nn.Module):
             self.final_layer_norm = T5LayerNorm(
                 self.hidden_size, eps=new_config.layer_norm_epsilon
             )
-        else:
-            self.init_label_embeddings()
 
         # === Decoder blocks ===
         self.decoder_blocks = nn.ModuleList(
@@ -79,6 +78,12 @@ class TransformerCharDecoder(nn.Module):
 
         # Initialize weights
         self._init_weights()
+
+        # Move the device to CUDA, if available
+        self.to("cuda" if torch.cuda.is_available() else "cpu")
+        if self.get_label_embeddings is not None:
+            self.init_label_embeddings()
+        self.to("cuda" if torch.cuda.is_available() else "cpu")
 
         # Cleanup
         del original_model
@@ -95,7 +100,8 @@ class TransformerCharDecoder(nn.Module):
             self.output_projection.weight = self.embedding.weight
 
     def _init_weights(self):
-        nn.init.xavier_uniform_(self.embedding.weight)
+        if self.embedding is not None:
+            nn.init.xavier_uniform_(self.embedding.weight)
         if self.final_layer_norm is not None:
             nn.init.ones_(self.final_layer_norm.weight)
         for block in self.decoder_blocks:
@@ -127,10 +133,20 @@ class TransformerCharDecoder(nn.Module):
                 current_attention_mask = self.label_id_descriptions["attention_mask"][
                     i : i + batch_size
                 ]
+                # Move the tensors to the correct device
+                current_input_ids = torch.tensor(
+                    current_input_ids, device=self.get_device()
+                )
+                current_attention_mask = torch.tensor(
+                    current_attention_mask, device=self.get_device()
+                )
                 if "token_type_ids" in self.label_id_descriptions:
                     current_token_type_ids = self.label_id_descriptions[
                         "token_type_ids"
                     ][i : i + batch_size]
+                    current_token_type_ids = torch.tensor(
+                        current_token_type_ids, device=self.get_device()
+                    )
                     batch_descriptions = {
                         "input_ids": torch.tensor(
                             current_input_ids,
