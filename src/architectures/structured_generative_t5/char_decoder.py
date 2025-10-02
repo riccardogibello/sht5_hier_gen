@@ -53,16 +53,21 @@ class TransformerCharDecoder(nn.Module):
         self.output_projection = None
         self.final_layer_norm = None
         self.embedding = None
-        if self.get_label_embeddings is None:
-            # Standard embedding layer
+        # If the model is the standard one, using an output tokenizer
+        if not config.use_latents:
+            # Initialize the embedding layer for the output tokens
             self.embedding = nn.Embedding(
                 num_embeddings=self.vocab_size,
                 embedding_dim=self.hidden_size,
                 padding_idx=self.pad_token_id,
             )
+            # Initialize an output projection layer for creating the logits
             self.output_projection = nn.Linear(
-                self.hidden_size, self.vocab_size, bias=False
+                self.hidden_size,
+                self.vocab_size,
+                bias=False,
             )
+            # Tie weights between the output projection and the embedding layer
             self.tie_weights()
             self.final_layer_norm = T5LayerNorm(
                 self.hidden_size, eps=new_config.layer_norm_epsilon
@@ -81,7 +86,10 @@ class TransformerCharDecoder(nn.Module):
 
         # Move the device to CUDA, if available
         self.to("cuda" if torch.cuda.is_available() else "cpu")
-        if self.get_label_embeddings is not None:
+        # If the current model uses latent representations extracted from the encoder
+        # as input of the output decoder
+        if config.use_latents:
+            # Initialize the label embeddings using the provided encoder callback
             self.init_label_embeddings()
         self.to("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -96,8 +104,11 @@ class TransformerCharDecoder(nn.Module):
         return next(self.parameters()).device
 
     def tie_weights(self):
-        if self.output_projection is not None:
-            self.output_projection.weight = self.embedding.weight
+        if self.output_projection is None or self.embedding is None:
+            raise ValueError(
+                "Cannot tie weights when output projection or embedding is None."
+            )
+        self.output_projection.weight = self.embedding.weight
 
     def _init_weights(self):
         if self.embedding is not None:
@@ -170,12 +181,15 @@ class TransformerCharDecoder(nn.Module):
                 # Use the mean of the last hidden state as embedding
                 embeddings = self.get_label_embeddings(batch_descriptions).mean(dim=1)
                 all_embeddings.append(embeddings.cpu())
-        # Concatenate all embeddings in a single tensor
+        # Concatenate all embeddings in a single tensor and initialize the embedding matrix
+        # of the tokens
         all_embeddings = torch.cat(all_embeddings, dim=0)
         self.embedding = nn.Embedding.from_pretrained(
             all_embeddings,
             freeze=True,
         )
+        # Build the index used to retrieve, given the output of the decoder, the nearest neighbor
+        # token in the embedding space
         self.build_faiss_index()
 
     # -------------------------
@@ -204,7 +218,7 @@ class TransformerCharDecoder(nn.Module):
         **kwargs,
     ):
         device = encoder_embedding.device
-        beam_size = kwargs.get("beam_size", 1)
+        beam_size = kwargs.get("beam_size", 4)
         early_stopping = kwargs.get("early_stopping", True)
         force_max_generation = kwargs.get("force_max_generation", False)
 
@@ -239,13 +253,14 @@ class TransformerCharDecoder(nn.Module):
                     cache_position=cache_position,
                 )[0]
 
-            if self.output_projection is not None:
+            # If the model uses teacher forcing and latent representations as decoder input and output
+            # for the objective of the autoregression, return the hidden states directly
+            if self.config.use_latents:
+                return hidden_states
+            else:
                 hidden_states = self.final_layer_norm(hidden_states)
                 logits = self.output_projection(hidden_states)
                 return logits
-            else:
-                return hidden_states
-
         else:
             # --- Beam search mode ---
             assert beam_size >= 1
@@ -307,35 +322,28 @@ class TransformerCharDecoder(nn.Module):
                     )[0]
 
                 # --- Output layer ---
-                if self.output_projection is not None:
+                if not self.config.use_latents:
                     hidden_states = self.final_layer_norm(hidden_states)
                     logits = self.output_projection(hidden_states[:, -1, :])
                     log_probs = F.log_softmax(logits, dim=-1)
                 else:
+                    logits = self.generate_logits(
+                        hidden_states=hidden_states[:, -1:, :],
+                        required_tokens=beam_size,
+                    )
                     # --- FAISS nearest neighbor search ---
-                    decoder_hidden = (
-                        hidden_states[:, -1, :].detach().cpu().numpy().astype("float32")
-                    )
-                    faiss.normalize_L2(decoder_hidden)
-                    distances, indices = self.faiss_index.search(
-                        decoder_hidden, beam_size
-                    )
-                    indices = torch.tensor(indices, device=device, dtype=torch.long)
-                    # Build pseudo-logits
-                    logits = torch.full(
-                        (batch_size * beam_size, self.vocab_size),
-                        float("-inf"),
-                        device=device,
-                    )
-                    for i in range(batch_size * beam_size):
-                        logits[i, indices[i]] = distances[
-                            i
-                        ]  # use distances as pseudo-logits
-                    log_probs = F.log_softmax(logits, dim=-1)
+                    log_probs = F.log_softmax(
+                        logits,
+                        dim=-1,
+                    ).squeeze(1)
+
+                # Save logits at current step for each sequence
+                logits_sequence[:, step, :] = logits.squeeze(1)
 
                 # --- Beam selection ---
                 total_scores = (sequence_scores.unsqueeze(1) + log_probs).view(
-                    batch_size, beam_size * self.vocab_size
+                    batch_size,
+                    beam_size * self.vocab_size,
                 )
                 top_scores, top_indices = torch.topk(total_scores, beam_size, dim=-1)
                 beam_indices = top_indices // self.vocab_size
@@ -371,7 +379,49 @@ class TransformerCharDecoder(nn.Module):
             )
             best_indices = torch.argmax(sequence_scores, dim=-1)
             best_logits_sequences = logits_sequence[
-                torch.arange(batch_size, device=device), best_indices
+                torch.arange(batch_size, device=device),
+                best_indices,
             ]
 
             return best_logits_sequences
+
+    def generate_logits(
+        self,
+        hidden_states: torch.Tensor,
+        required_tokens: int,
+    ):
+        """
+        This method, given the hidden states produced by the decoder, identifies through the
+        FAISS index the nearest neighbor token(s) in the embedding space and returns the
+        corresponding logits, based on the similarity scores.
+
+        Args:
+            hidden_states: A Tensor of shape (batch_size, sequence_length, hidden_size) containing
+                the hidden states produced by the decoder for which to generate the logits for the
+                required number of best tokens.
+            required_tokens: The number of nearest neighbor tokens to retrieve for each hidden state.
+        """
+
+        device = hidden_states.device
+        batch_size, seq_length, _ = hidden_states.size()
+        hidden_states_np = hidden_states.detach().cpu().numpy().astype("float32")
+        faiss.normalize_L2(hidden_states_np.reshape(-1, hidden_states_np.shape[-1]))
+        distances, indices = self.faiss_index.search(
+            hidden_states_np.reshape(-1, hidden_states_np.shape[-1]),
+            required_tokens,
+        )
+        indices = torch.tensor(
+            indices,
+            device=device,
+            dtype=torch.long,
+        )
+        # Build pseudo-logits
+        logits = torch.full(
+            (batch_size * seq_length, self.vocab_size),
+            float("-inf"),
+            device=device,
+        )
+        for i in range(batch_size * seq_length):
+            logits[i, indices[i]] = torch.from_numpy(distances[i]).to(device)
+        logits = logits.view(batch_size, seq_length, self.vocab_size)
+        return logits

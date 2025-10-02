@@ -14,6 +14,7 @@ class ProgramParameter(Enum):
     # GENERIC PARAMETERS
     EXPERIMENT_NAMES = "experiment_names"
     BASE_DATA_FOLDER = "base_data_folder"
+    USE_LATENTS = "use_latents"
     MODEL_NAME = "model_name"
     DECODER_TYPE = "decoder_type"
     HF_MODEL_NAME = "hf_model_name"
@@ -45,6 +46,8 @@ class ProgramParameter(Enum):
             return "."
         elif program_parameter == ProgramParameter.MODEL_NAME:
             return "t5_baseline"
+        elif program_parameter == ProgramParameter.USE_LATENTS:
+            return False
         elif program_parameter == ProgramParameter.DECODER_TYPE:
             return "transformer"
         elif program_parameter == ProgramParameter.HF_MODEL_NAME:

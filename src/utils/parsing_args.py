@@ -33,6 +33,14 @@ def _add_generic_args(
         help="Model name to be used for the experiments",
     )
     parser.add_argument(
+        f"--{ProgramParameter.USE_LATENTS.value}",
+        action="store_true",
+        default=ProgramParameter.get_parameter(
+            ProgramParameter.USE_LATENTS,
+        ),
+        help="Whether to use latent representations for autoregression",
+    )
+    parser.add_argument(
         f"--{ProgramParameter.DECODER_TYPE.value}",
         type=str,
         required=False,

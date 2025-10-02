@@ -72,10 +72,12 @@ class StructuredGenerativeT5Config(BaseConfig):
         decoder_bos_token_id=0,
         decoder_eos_token_id=0,
         decoder_pad_token_id=0,
+        use_latents: bool = False,
         **kwargs,
     ):
         super().__init__(**kwargs)
         self.decoder_type = decoder_type
+        self.use_latents = use_latents
         self.lstm_tokenizer_path = decoder_tokenizer_path
         self.decoder_input_size = decoder_input_size
         self.decoder_hidden_size = decoder_hidden_size

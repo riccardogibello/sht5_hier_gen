@@ -40,6 +40,7 @@ def train_model(
     first_level_chars: int,
     per_level_chars: int,
     args: argparse.ArgumentParser,
+    use_latents: bool = False,
 ):
     labels_file_path = os.path.join(
         experiment_data_folder,
@@ -136,6 +137,7 @@ def train_model(
             decoder_bos_token_id=sg_tokenizer.bos_token_id,
             decoder_eos_token_id=sg_tokenizer.eos_token_id,
             decoder_pad_token_id=sg_tokenizer.pad_token_id,
+            use_latents=use_latents,
         )
         config.save_pretrained(
             save_directory=model_folder_path,

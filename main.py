@@ -40,6 +40,7 @@ if __name__ == "__main__":
     model_name: ModelName = ModelName.get_model(
         get_arg(args, ProgramParameter.MODEL_NAME)
     )
+    use_latents: bool = get_arg(args, ProgramParameter.USE_LATENTS)
     decoder_type = DecoderType.from_string(get_arg(args, ProgramParameter.DECODER_TYPE))
     hf_model_name: str = get_arg(args, ProgramParameter.HF_MODEL_NAME)
     per_level_chars: int = int(get_arg(args, ProgramParameter.PER_LEVEL_CHARS))
@@ -66,6 +67,7 @@ if __name__ == "__main__":
             args,
             cumulative,
             decoder_type,
+            use_latents,
         )
         """tracked_function(
             _command=run_experiments,

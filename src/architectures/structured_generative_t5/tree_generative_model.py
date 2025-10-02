@@ -131,12 +131,13 @@ class TreeGenerativeModel(AbstractT5Model):
             token_type_ids=token_type_ids if self.encoder_requires_type_ids else None,
         )
 
-        # Decoder forward
+        # Pass the encoder output to the decoder and perform the forward pass to predict the
+        # logits of the entire sequence
         logits = self.decoder(
             batch_size=input_ids.size(0),
             encoder_embedding=cls_token_embedding,
             max_generation_length=max_generation_length - 1,
-            use_teacher_forcing=use_teacher_forcing,
+            use_teacher_forcing=False,  # TODO use_teacher_forcing,
             true_labels=labels,
             encoder_attention_mask=attention_mask,
             force_max_generation=True,  # TODO make this a parameter so that it is not True at inference time
@@ -145,7 +146,7 @@ class TreeGenerativeModel(AbstractT5Model):
             # If the decoder returns a tuple, extract logits
             logits = logits[1]
 
-        # Calculate predicted tokens
+        # Calculate predicted tokens by
         predicted_token_ids = torch.argmax(logits, dim=-1)
 
         loss = None
@@ -164,8 +165,11 @@ class TreeGenerativeModel(AbstractT5Model):
                 logits = logits[:, :-1]
 
             try:
-                # TODO update the InfoNCE loss
-                loss = InfoNCE(negative_mode="paired")
+                # Perform the InfoNCE loss to try to bring the logits of each predicted "token" closer to the
+                # embeddings of the positive labels, and farther from the embeddings of the negative labels.
+                loss = InfoNCE(
+                    negative_mode="paired",
+                )
                 info_nce_loss = loss(
                     logits.reshape(-1, logits.size(2)),
                     positive_labels_embeddings.reshape(
@@ -177,7 +181,8 @@ class TreeGenerativeModel(AbstractT5Model):
                         negative_labels_embeddings.size(3),
                     ),
                 )
-                # CrossEntropy loss with optional label smoothing
+                # Perform the usual cross-entropy loss to account for the correct prediction of the next token.
+                # However, this loss works in the vocabulary space, while the InfoNCE works in the embedding space.
                 ce_loss = nn.CrossEntropyLoss(
                     ignore_index=self.config.decoder_pad_token_id,
                     # weight=self.label_weights,
@@ -197,7 +202,6 @@ class TreeGenerativeModel(AbstractT5Model):
                 and training_config.length_penalty_weight is not None
                 and training_config.length_penalty_weight > 0
             ):
-                # Length penalty computation
                 pad_token_id = self.config.decoder_pad_token_id
                 eos_token_id = self.config.decoder_eos_token_id
 

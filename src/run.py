@@ -27,6 +27,7 @@ def run_experiments(
     arguments: argparse.ArgumentParser,
     cumulative: bool = False,
     decoder_type: DecoderType = DecoderType.NONE,
+    use_latents: bool = False,
 ):
     # For each experiment name
     for experiment_name in experiment_names:
@@ -65,6 +66,7 @@ def run_experiments(
                 first_level_chars=first_level_chars,
                 per_level_chars=per_level_chars,
                 args=arguments,
+                use_latents=use_latents,
             )
         else:
             print(f"Model {model_name.value} is not supported for training. ")
