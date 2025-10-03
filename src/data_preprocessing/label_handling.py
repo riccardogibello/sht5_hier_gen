@@ -236,7 +236,6 @@ def extract_tree_labels(
                         labels.append(current_label)
             elif is_right_length and not is_valid:
                 malformed_labels += 1
-                # TODO
                 labels.append("ERROR")
                 current_components = previous_components
             else:

@@ -71,8 +71,7 @@ if __name__ == "__main__":
         model_folder_path=MODEL_FOLDER_PATH,
         load_best=True,
     )
-    # TODO device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    device = torch.device("cpu")  # Force CPU for this example
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
 
     # Clean all the inputs, keeping only alphanumeric characters, symbols, and spaces

@@ -51,7 +51,6 @@ The process may take a few minutes. GPU-accelerated packages will be installed a
 
 ## Input directory setup & Pipeline Execution
 
-TODO
 During the execution, the pipeline will track the amount of carbon emissions produced through the Python package
 `codecarbon`. Every output file for each experiment will be saved in the `data/_emissions/` folder. Please, refer to the [CodeCarbon documentation](https://mlco2.github.io/codecarbon/) for details on how to interpret the results.
 
