@@ -13,10 +13,6 @@ The repository also includes an implementation of the vanilla T5 model, followin
 - [**Medical Device Coding Failure (MDCF):**](https://www.accessdata.fda.gov/scripts/cdrh/cfdocs/cfmaude/search.cfm)
   Extracted from the U.S. Food and Drug Administration Manufacturer and User Facility Device Experience (MAUDE) database, this dataset contains reports describing failures related to medical devices.
 
-All datasets, as of July 16, 2025, are available in the following Zenodo repository:
-
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.13890612.svg)](https://doi.org/10.5281/zenodo.13890612)
-
 If you build upon this work in your research, please cite the following paper:
 
 ```bibtex
